@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.env
+*.egg
+*.egg-info/
+dist/
+build/
+.coverage
+*.log
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+logs/
+temp/
+*.db
+config_local.py
+
+# MongoDB
+data/
+mongodb/
+
+# OPC UA
+certificates/
+*.der
+*.pem
+
+# Coverage reports
+htmlcov/
+.coverage.*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
+.env.local
+.env.production
