@@ -1,7 +1,3 @@
-"""
-Constants used throughout the MQTT-OPCUA integration system.
-"""
-
 # === MOTOR SPECIFICATIONS ===
 NOMINAL_VOLTAGE = 220.0
 VOLTAGE_TOLERANCE = 0.1
@@ -37,3 +33,6 @@ MQTT_TO_OPCUA_MAP = {
     ('axial',): 'Axial',
     ('radial',): 'Radial'
 }
+
+
+

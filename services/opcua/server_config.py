@@ -22,11 +22,13 @@ async def configure_server_info(server: Server):
     server.product_uri = os.getenv('OPCUA_SERVER_PRODUCT_URI', 'urn:motor50cv:product')
 
 async def main():
-    print('teste....')
     server = Server()
     await server.init()
     await configure_server_info(server)
-    print('ok')
 
 if __name__ == "__main__":
     asyncio.run(main())
+    server = Server()
+    await server.init()
+    await configure_server_info(server)
+
