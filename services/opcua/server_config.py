@@ -26,4 +26,9 @@ async def main():
     await server.init()
     await configure_server_info(server)
 
+if __name__ == "__main__":
+    asyncio.run(main())
+    server = Server()
+    await server.init()
+    await configure_server_info(server)
 

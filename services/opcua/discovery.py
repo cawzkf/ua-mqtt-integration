@@ -19,3 +19,4 @@ async def task_register_discovery(server: Server, registration_interval = 5):
             print(f"Erro no registro de discovery: {e}")
         except OSError:
             await asyncio.sleep(registration_interval)
+
