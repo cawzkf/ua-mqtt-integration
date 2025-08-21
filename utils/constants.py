@@ -22,5 +22,18 @@ MQTT_TO_OPCUA_MAP = {
     ('voltage', 'c'): 'VoltageC',
     ('current', 'a'): 'CurrentA',
     ('current', 'b'): 'CurrentB',
-    ('current', 'c'): 'CurrentC'
+    ('current', 'c'): 'CurrentC',
+    ('power', 'active'): 'PowerActive',
+    ('power', 'reactive'): 'PowerReactive',
+    ('power', 'apparent'): 'PowerApparent',
+    ('energy', 'active'): 'EnergyActive',
+    ('energy', 'reactive'): 'EnergyReactive',
+    ('energy', 'apparent'): 'EnergyApparent',
+    ('powerFactor',): 'PowerFactor',
+    ('frequency',): 'Frequency',
+    ('temperature',): 'Temperature',
+    ('humidity',): 'Humidity',
+    ('caseTemperature',): 'CaseTemperature',
+    ('axial',): 'Axial',
+    ('radial',): 'Radial'
 }

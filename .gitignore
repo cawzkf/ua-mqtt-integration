@@ -55,3 +55,6 @@ htmlcov/
 # Environments
 .env.local
 .env.production
+htmlcov/
+.coverage
+.pytest_cache/
