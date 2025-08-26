@@ -1,66 +1,59 @@
-import uuid
-import asyncio
-import os
+import os, uuid, asyncio, logging, json
 from dotenv import load_dotenv
 from gmqtt import Client as MQTTClient
-from utils.constants import MQTT_TOPICS
+from services.mqtt.message_handler import MQTTMessageHandler
+from services.opcua.node_manager import OPCUANodeManager
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 class MQTTChannel:
-
     def __init__(self, client_id=None):
         load_dotenv()
-        self.host = os.getenv('MQTT_BROKER_HOST', 'localhost')
-        self.port = int(os.getenv('MQTT_BROKER_PORT', '1883'))
+        self.host = "lse.dev.br"
+        self.port = 1883
         
-        client_id = client_id or f"ua-mqtt-{uuid.uuid4().hex[:6]}"
-        self.client = MQTTClient(client_id)
-        
+        cid = client_id or f"ua-mqtt-{uuid.uuid4().hex[:6]}"
+        self.client = MQTTClient(cid)
+
+
+        node_manager = OPCUANodeManager({})
+        self.handler = MQTTMessageHandler(node_manager=node_manager)
+
+        self.client.on_message = self.handler.on_message
         self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.is_connected = False
+        self.client.on_disconnect = self.on_disconnect
+
 
     async def init(self):
-        print(f"Connecting to {self.host}:{self.port}...")
+        logger.info("Connecting to %s:%s", self.host, self.port)
         await self.client.connect(self.host, self.port)
+        logger.info("Connected to %s:%s", self.host, self.port)
 
-    def subscribe_default_topics(self):
-        topics = [
-            MQTT_TOPICS.get("ELECTRICAL", "scgdi/motor/electrical"),
-            MQTT_TOPICS.get("VIBRATION", "scgdi/motor/vibration"),
-            MQTT_TOPICS.get("ENVIRONMENT", "scgdi/motor/environment")
-        ]
-        
-        for topic in topics:
-            self.client.subscribe(topic)
-            print(f"Subscribed: {topic}")
 
     def on_connect(self, _client, _flags, rc, _properties=None):
         if rc == 0:
-            self.is_connected = True
-            print("Connected")
+            logger.info("MQTT connected")
         else:
-            print(f"Failed (code: {rc})")
+            logger.error("MQTT connect failed rc=%s", rc)
 
-    def on_message(self, _client, topic, payload, _qos, _properties=None):
-        try:
-            message = payload.decode('utf-8')[:100]  # Só primeiros 100 chars
-            print(f"[{topic}]: {message}...")
-        except:
-            pass
-
+    def on_disconnect(self, _client, _packet, exc=None):
+        if exc:
+            logger.warning("MQTT disconnected: %s", exc)
+        else:
+            logger.info("MQTT disconnected")
 
 async def main():
     try:
-        client = MQTTChannel()
-        await client.init()
-        client.subscribe_default_topics()
-        
-        print("Listening...")
+        ch = MQTTChannel()
+        await ch.init()
+        ch.client.subscribe('scgdi/motor/electrical')
+        ch.client.subscribe('scgdi/motor/vibration')
+        ch.client.subscribe('scgdi/motor/environment')
+        logger.info("Listening...")
         await asyncio.Event().wait()
     except KeyboardInterrupt:
-        print("Stopped.")
+        logger.warning("Stopped")
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
