@@ -1,10 +1,12 @@
 import os
 import asyncio
+import logging
 from datetime import datetime, timezone
 from asyncua import Server
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 async def configure_server_info(server: Server):
     await server.set_build_info(
