@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv
+.venv
+.pytest_cache
+.coverage
+*.egg-info
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs e dados
+logs/
+*.log
+data/
+temp/
+
+# Configurações locais
+.env
+config_local.py
+
+# Documentação de desenvolvimento
+README.md
+docs/
+tests/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Desenvolvimento
+Makefile
+requirements-dev.txt
