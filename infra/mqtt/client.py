@@ -1,66 +1,77 @@
+import os
 import uuid
 import asyncio
-import os
+import logging
+from typing import Dict, Tuple
 from dotenv import load_dotenv
 from gmqtt import Client as MQTTClient
-from utils.constants import MQTT_TOPICS
+from services.mqtt.message_handler import MQTTMessageHandler
+from services.opcua.node_manager import OPCUANodeManager
+from utils.constants import MQTT_TO_OPCUA_MAP
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 class MQTTChannel:
-
-    def __init__(self, client_id=None):
+    def __init__(self, node_manager: OPCUANodeManager, variable_mapper: Dict[Tuple[str, ...], str]):
         load_dotenv()
-        self.host = os.getenv('MQTT_BROKER_HOST', 'localhost')
-        self.port = int(os.getenv('MQTT_BROKER_PORT', '1883'))
-        
-        client_id = client_id or f"ua-mqtt-{uuid.uuid4().hex[:6]}"
-        self.client = MQTTClient(client_id)
-        
+        self.username = os.getenv("MQTT_USERNAME") or None
+        self.password = os.getenv("MQTT_PASSWORD") or None
+        self.host = os.getenv("MQTT_BROKER_HOST", "localhost")
+        self.port = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+
+        self.client = MQTTClient(uuid.uuid4().hex)
+
+        self.handler = MQTTMessageHandler(
+            node_manager=node_manager,
+            variable_mapper=variable_mapper
+        )
+
+        self.client.on_message = self.handler.on_message
         self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.is_connected = False
+        self.client.on_disconnect = self.on_disconnect
 
     async def init(self):
-        print(f"Connecting to {self.host}:{self.port}...")
+        logger.info("Connecting to %s:%s", self.host, self.port)
+        if self.username and self.password:
+            self.client.set_auth_credentials(self.username, self.password)
         await self.client.connect(self.host, self.port)
-
-    def subscribe_default_topics(self):
-        topics = [
-            MQTT_TOPICS.get("ELECTRICAL", "scgdi/motor/electrical"),
-            MQTT_TOPICS.get("VIBRATION", "scgdi/motor/vibration"),
-            MQTT_TOPICS.get("ENVIRONMENT", "scgdi/motor/environment")
-        ]
-        
-        for topic in topics:
-            self.client.subscribe(topic)
-            print(f"Subscribed: {topic}")
+        logger.info("Connected to %s:%s", self.host, self.port)
 
     def on_connect(self, _client, _flags, rc, _properties=None):
         if rc == 0:
-            self.is_connected = True
-            print("Connected")
+            topics = [
+                "scgdi/motor/electrical",
+                "scgdi/motor/vibration",
+                "scgdi/motor/environment",
+            ]
+            for t in topics:
+                self.client.subscribe(t)
+            logger.info("MQTT connected; subscribed to: %s", ", ".join(topics))
         else:
-            print(f"Failed (code: {rc})")
+            logger.error("MQTT connect failed rc=%s", rc)
 
-    def on_message(self, _client, topic, payload, _qos, _properties=None):
+    def on_disconnect(self, _client, _packet, exc=None):
+        if exc:
+            logger.warning("MQTT disconnected: %s", exc)
+        else:
+            logger.info("MQTT disconnected")
+    
+    async def close(self):
         try:
-            message = payload.decode('utf-8')[:100]  # Só primeiros 100 chars
-            print(f"[{topic}]: {message}...")
-        except:
+            await self.client.disconnect()
+        except Exception:
             pass
 
-
 async def main():
-    try:
-        client = MQTTChannel()
-        await client.init()
-        client.subscribe_default_topics()
-        
-        print("Listening...")
-        await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        print("Stopped.")
+    node_manager = OPCUANodeManager()
+    ch = MQTTChannel(node_manager=node_manager, variable_mapper=MQTT_TO_OPCUA_MAP)
+    await ch.init()
+    logger.info("Listening...")
+    await asyncio.Event().wait()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
