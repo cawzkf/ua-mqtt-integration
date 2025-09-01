@@ -1,20 +1,24 @@
 import os
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from asyncua import Client, Server
+from asyncua.ua import ObjectIds, VariantType
 from dotenv import load_dotenv
+from asyncua import ua
 from infra.mqtt.client import MQTTChannel
 from services.opcua.node_manager import OPCUANodeManager
 from utils.constants import MQTT_TO_OPCUA_MAP
+from services.events.current_monitor import check_current_events
+from services.events.voltage_monitor import check_voltage_events
+from services.events.temperature_monitor import check_temperature_events
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(processName)s %(name)s: %(message)s"
+    format="%(asctime)s [%(levelname)s]: %(message)s"
 )
-
 
 async def task_register_discovery(server: Server, registration_interval: float | None):
     lds_endpoint = os.getenv("LDS_ENDPOINT")
@@ -24,9 +28,9 @@ async def task_register_discovery(server: Server, registration_interval: float |
  
     if registration_interval is None:
         try:
-            registration_interval = float(os.getenv("LDS_REGISTER_INTERVAL", "10"))
+            registration_interval = float(os.getenv("LDS_REGISTER_INTERVAL", "15"))
         except Exception:
-            registration_interval = 10.0
+            registration_interval = 15.0
 
     while True:
         try:
@@ -49,9 +53,21 @@ async def configure_server_info(server: Server):
     )
     app_uri = os.getenv("OPCUA_APPLICATION_URI", "urn:camila:opcua-server")
     await server.set_application_uri(app_uri)
-    server.name = os.getenv("OPCUA_SERVER_NAME")
+    server.set_server_name(os.getenv("OPCUA_SERVER_NAME", "Camila OPC UA Server"))
 
-
+async def check_events(event_generator, nodes_variables):
+    await asyncio.sleep(0.5)
+    while True:
+        try:
+            if event_generator:
+                await check_temperature_events(nodes_variables, event_generator)
+                await check_voltage_events(nodes_variables, event_generator)
+                await check_current_events(nodes_variables, event_generator)
+        except Exception:
+            logger.exception("Falha ao checar eventos")
+        await asyncio.sleep(5) 
+    
+    
 async def init_mqtt(node_manager: OPCUANodeManager) -> MQTTChannel:
     ch = MQTTChannel(node_manager=node_manager, variable_mapper=MQTT_TO_OPCUA_MAP)
     await ch.init()
@@ -61,6 +77,7 @@ async def discovery():
     server = Server()
     await server.init()
     await configure_server_info(server)
+
 
     idx = await server.register_namespace(
         os.getenv("OPCUA_SERVER_PRODUCT_URI", "urn:camila.github.io:python:server")
@@ -82,26 +99,75 @@ async def discovery():
     environment_variables = ["Temperature", "Humidity", "CaseTemperature"]
     vibration_variables   = ["Axial", "Radial"]
 
-    nodes_variables: dict[str, object] = {}
-
+    nodes_variables = {}
     for parent, variables in (
         (electrical, electrical_variables),
         (environment, environment_variables),
         (vibration, vibration_variables),
-    ):
+    ): 
         for var in variables:
             node_val = await parent.add_variable(idx, var, 0.0)
             await node_val.set_writable()
             nodes_variables[var] = node_val
-
+            
     node_manager = OPCUANodeManager()
     node_manager.set_nodes(nodes_variables)
 
     _ch = await init_mqtt(node_manager)
 
+    variables_for_history = list(nodes_variables.keys())
+
+    for nome_variavel in variables_for_history:
+        try:
+            node = nodes_variables[nome_variavel]
+            await server.iserver.enable_history_data_change(node, period=timedelta(seconds=5),count=10000)
+            server.iserver.history_manager.historize_node_data_change(node)
+            await node.write_attribute(ua.AttributeIds.Historizing,ua.DataValue(ua.Variant(True, ua.VariantType.Boolean)))
+            logger.info("History habilitado -> [%s]", nome_variavel)
+        except:
+            logger.exception("Error -> history")
+    
+    try:
+        etype = await server.create_custom_event_type(
+            idx, "Motor50CVMonitoringEvent", ObjectIds.BaseEventType, [
+                ("CaseTemperature", VariantType.Float),
+                ("VoltagePhase", VariantType.String),
+                ("CurrentPhase", VariantType.String)
+            ],
+        )
+
+        event_generator = await server.get_event_generator(etype, motor50cv)
+        try:
+            event_generator.emitting_node = motor50cv
+        except Exception:
+            event_generator.emitting_node = motor50cv.nodeid
+
+        try:
+            await motor50cv.write_attribute(
+                ua.AttributeIds.EventNotifier,
+                ua.DataValue(ua.Variant(1, ua.VariantType.Byte))  
+            )
+        except AttributeError:
+            await server.set_attribute_value(
+                parent.nodeid,
+                ua.AttributeIds.EventNotifier,
+                ua.DataValue(ua.Variant(1, ua.VariantType.Byte))
+            )
+        
+        await server.iserver.enable_history_event(
+            server.nodes.server, 
+            period=timedelta(seconds=1),
+            count=10000
+        )
+
+    except Exception as e:
+        logger.exception("Erro ao configurar eventos: {%s}", e)
+        event_generator = None
+
     async with server:
-        asyncio.create_task(task_register_discovery(server, None))
-        await asyncio.Event().wait()
+        asyncio.create_task(task_register_discovery(server, registration_interval=10))
+        asyncio.create_task(check_events(event_generator,node_manager))
+        await asyncio.Future()
 
 
 if __name__ == "__main__":
