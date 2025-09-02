@@ -27,3 +27,8 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
 asyncio_mode = "auto"
+
+[tool.commitizen]
+name = "cz_conventional_changelog"
+version = "0.1.0"
+tag_format = "v$version"

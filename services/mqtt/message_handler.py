@@ -62,11 +62,11 @@ class MQTTMessageHandler:
 
     @staticmethod
     def _extract_value_from_data(data: Dict[str, Any], key_path: tuple):
-        cur: Any = data
+        curr: Any = data
         for key in key_path:
-            if isinstance(cur, dict) and key in cur:
-                cur = cur[key]
+            if isinstance(curr, dict) and key in curr:
+                curr = curr[key]
             else:
                 return None
-        return cur
+        return curr
 

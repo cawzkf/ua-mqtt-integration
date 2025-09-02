@@ -11,7 +11,7 @@ from utils.constants import MQTT_TO_OPCUA_MAP
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format="%(asctime)s [%(levelname)s]: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class MQTTChannel:
         load_dotenv()
         self.username = os.getenv("MQTT_USERNAME") or None
         self.password = os.getenv("MQTT_PASSWORD") or None
-        self.host = os.getenv("MQTT_BROKER_HOST", "localhost")
+        self.host = os.getenv("MQTT_BROKER_HOST", "lse.dev.br")
         self.port = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 
         self.client = MQTTClient(uuid.uuid4().hex)
