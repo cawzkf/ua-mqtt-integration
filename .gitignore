@@ -6,7 +6,6 @@ __pycache__/
 .Python
 env/
 venv/
-tests/
 .venv/
 .env
 *.egg
@@ -47,15 +46,10 @@ certificates/
 htmlcov/
 .coverage.*
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
 # pyenv
 .python-version
 
 # Environments
-.env.local
-.env.production
 htmlcov/
 .coverage
 .pytest_cache/

@@ -1,6 +1,24 @@
+"""
+Servidor OPC UA para monitoramento de Motor 50CV.
+
+Este módulo implementa um servidor OPC UA completo para monitoramento de um motor de 50CV,
+incluindo variáveis elétricas, ambientais e de vibração. O servidor oferece funcionalidades
+de histórico, eventos personalizados e integração com MQTT.
+
+Funcionalidades principais:
+- Servidor OPC UA com namespaces personalizados
+- Monitoramento de variáveis elétricas, ambientais e de vibração
+- Sistema de eventos para alertas de temperatura, tensão e corrente
+- Armazenamento de histórico em MongoDB
+- Integração com MQTT para comunicação externa
+- Registro automático em Local Discovery Server (LDS)
+
+"""
+
 import os
 import asyncio
 import logging
+import types
 from datetime import datetime, timezone, timedelta
 from asyncua import Client, Server
 from asyncua.ua import ObjectIds, VariantType
@@ -9,6 +27,7 @@ from asyncua import ua
 from infra.mqtt.client import MQTTChannel
 from services.opcua.node_manager import OPCUANodeManager
 from utils.constants import MQTT_TO_OPCUA_MAP
+from infra.mongo.history_manager import HistoryMongoDB
 from services.events.current_monitor import check_current_events
 from services.events.voltage_monitor import check_voltage_events
 from services.events.temperature_monitor import check_temperature_events
@@ -19,8 +38,74 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s]: %(message)s"
 )
+import types
+from asyncua import ua
 
+def patch_monitored_item_service():
+    """Patch para desabilitar WhereClause no MonitoredItemService"""
+    try:
+        from asyncua.server.monitored_item_service import MonitoredItemService
+        
+        # Salva o método original
+        original_trigger_event = MonitoredItemService.trigger_event
+        
+        # Cria novo método que preserva o evento original
+        async def new_trigger_event(self, original_event):
+            # Para cada monitored item de eventos
+            for mid, mdata in self._monitored_items.items():
+                try:
+                    # Verifica se é um EventFilter
+                    if hasattr(mdata, 'filter') and mdata.filter:
+                        # PRESERVAR O EVENTO ORIGINAL ao invés de criar novo
+                        fieldlist = ua.EventFieldList()
+                        fieldlist.ClientHandle = mdata.client_handle
+                        
+                        # Usar o evento original diretamente
+                        if hasattr(mdata.filter, 'Body') and hasattr(mdata.filter.Body, 'SelectClauses'):
+                            select_clauses = mdata.filter.Body.SelectClauses
+                        elif hasattr(mdata.filter, 'SelectClauses'):
+                            select_clauses = mdata.filter.SelectClauses
+                        else:
+                            continue
+                            
+                        # USAR O EVENTO ORIGINAL para preservar campos personalizados
+                        fieldlist.EventFields = original_event.to_event_fields(select_clauses)
+                        await self.isub.enqueue_event(mid, fieldlist, mdata.queue_size)
+                        
+                        logger.info(f"Evento preservado para monitored item {mid}")
+                        
+                except Exception as e:
+                    logger.warning(f"Erro ao processar monitored item {mid}: {e}")
+        
+        # Aplica o patch
+        MonitoredItemService.trigger_event = new_trigger_event
+        logger.info("Patch aplicado - eventos originais serão preservados")
+        
+    except Exception as e:
+        logger.warning(f"Erro ao aplicar patch: {e}")
+        
 async def task_register_discovery(server: Server, registration_interval: float | None):
+    """
+    Registra o servidor OPC UA no Local Discovery Server (LDS) periodicamente.
+    
+    Esta função mantém o servidor registrado no LDS, permitindo que clientes
+    descubram automaticamente o servidor na rede. O registro é renovado
+    periodicamente para manter a disponibilidade.
+    
+    Args:
+        server (Server): Instância do servidor OPC UA a ser registrado
+        registration_interval (float | None): Intervalo em segundos entre registros.
+                                             Se None, usa variável de ambiente
+                                             LDS_REGISTER_INTERVAL (padrão: 15s)
+    
+    Environment Variables:
+        LDS_ENDPOINT: URL do Local Discovery Server
+        LDS_REGISTER_INTERVAL: Intervalo de registro em segundos (padrão: 15)
+    
+    Note:
+        Esta função executa indefinidamente em loop até ser cancelada.
+        Em caso de falha na conexão com LDS, registra o erro e continua tentando.
+    """
     lds_endpoint = os.getenv("LDS_ENDPOINT")
     if not lds_endpoint:
         logger.warning("LDS_ENDPOINT não configurado")
@@ -43,6 +128,27 @@ async def task_register_discovery(server: Server, registration_interval: float |
 
 
 async def configure_server_info(server: Server):
+    """
+    Configura as informações básicas do servidor OPC UA.
+    
+    Define metadados como nome do produto, fabricante, versão e URIs
+    do servidor baseados em variáveis de ambiente ou valores padrão.
+    
+    Args:
+        server (Server): Instância do servidor OPC UA a ser configurado
+    
+    Environment Variables:
+        OPCUA_PRODUCT_URI: URI do produto (padrão: http://examples.freeopcua.github.io)
+        OPCUA_MANUFACTURER: Nome do fabricante (padrão: Camila LTDA)
+        OPCUA_PRODUCT_NAME: Nome do produto (padrão: opcua-server)
+        OPCUA_SOFTWARE_VERSION: Versão do software (padrão: 1.0.0)
+        OPCUA_BUILD_NUMBER: Número do build (padrão: 20250820)
+        OPCUA_APPLICATION_URI: URI da aplicação (padrão: urn:camila:opcua-server)
+        OPCUA_SERVER_NAME: Nome do servidor (padrão: Camila OPC UA Server)
+    
+    Note:
+        A data de build é sempre definida como o momento atual em UTC.
+    """
     await server.set_build_info(
         product_uri=os.getenv("OPCUA_PRODUCT_URI", "http://examples.freeopcua.github.io"),
         manufacturer_name=os.getenv("OPCUA_MANUFACTURER", "Camila LTDA"),
@@ -55,7 +161,26 @@ async def configure_server_info(server: Server):
     await server.set_application_uri(app_uri)
     server.set_server_name(os.getenv("OPCUA_SERVER_NAME", "Camila OPC UA Server"))
 
+
 async def check_events(event_generator, nodes_variables):
+    """
+    Monitora continuamente as variáveis do motor e gera eventos quando necessário.
+    
+    Esta função executa em loop verificando condições de alarme para:
+    - Temperatura (superaquecimento)
+    - Tensão (sobre/sub tensão)  
+    - Corrente (sobrecarga)
+    
+    Args:
+        event_generator: Gerador de eventos OPC UA personalizado para Motor50CVMonitoringEvent
+        nodes_variables: Gerenciador de nós contendo as variáveis do motor
+    
+    Note:
+        - Aguarda 0.5s antes de iniciar o monitoramento
+        - Verifica eventos a cada 5 segundos
+        - Continua executando indefinidamente mesmo em caso de erros
+        - Registra exceções no log para debugging
+    """
     await asyncio.sleep(0.5)
     while True:
         try:
@@ -67,38 +192,98 @@ async def check_events(event_generator, nodes_variables):
             logger.exception("Falha ao checar eventos")
         await asyncio.sleep(5) 
     
-    
+
 async def init_mqtt(node_manager: OPCUANodeManager) -> MQTTChannel:
+    """
+    Inicializa o canal de comunicação MQTT.
+    
+    Cria e configura um canal MQTT que permite comunicação bidirecional
+    entre o servidor OPC UA e sistemas externos via protocolo MQTT.
+    
+    Args:
+        node_manager (OPCUANodeManager): Gerenciador de nós OPC UA para
+                                        mapeamento de variáveis
+    
+    Returns:
+        MQTTChannel: Canal MQTT inicializado e pronto para uso
+    
+    Note:
+        Usa MQTT_TO_OPCUA_MAP para mapear tópicos MQTT para variáveis OPC UA.
+        As configurações de conexão MQTT devem estar nas variáveis de ambiente.
+    """
     ch = MQTTChannel(node_manager=node_manager, variable_mapper=MQTT_TO_OPCUA_MAP)
     await ch.init()
     return ch
 
+
 async def discovery():
+    patch_monitored_item_service()
+    """
+    Função principal que inicializa e executa o servidor OPC UA.
+    
+    Esta função coordena toda a inicialização do servidor, incluindo:
+    1. Configuração do servidor e informações básicas
+    2. Criação da estrutura de nós (Motor50CV com subgrupos)
+    3. Definição de variáveis elétricas, ambientais e de vibração
+    4. Configuração do sistema de histórico com MongoDB
+    5. Criação de eventos personalizados para monitoramento
+    6. Integração com MQTT
+    7. Registro no Local Discovery Server
+    8. Início do monitoramento de eventos
+    
+    Estrutura de nós criada:
+    - Motor50CV/
+      ├── Electrical/ (tensões, correntes, potências, energia, fator de potência, frequência)
+      ├── Environment/ (temperatura, umidade, temperatura do case)
+      └── Vibration/ (axial, radial)
+    
+    Funcionalidades configuradas:
+    - Histórico de dados com período de 5s e limite de 10.000 registros
+    - Eventos personalizados Motor50CVMonitoringEvent
+    - Registro automático no LDS a cada 10 segundos
+    - Monitoramento contínuo de condições de alarme
+    
+    Environment Variables:
+        OPCUA_SERVER_PRODUCT_URI: URI do namespace do servidor
+        
+    Raises:
+        Exception: Em caso de falha na inicialização de componentes críticos
+        
+    Note:
+        Esta função executa indefinidamente até ser interrompida externamente.
+        Todos os erros são registrados no log para facilitar debugging.
+    """
     server = Server()
     await server.init()
+    storage = HistoryMongoDB(server)
+    await storage.init()
+    server.iserver.history_manager.set_storage(storage)
     await configure_server_info(server)
 
-
+    # Registro do namespace personalizado
     idx = await server.register_namespace(
         os.getenv("OPCUA_SERVER_PRODUCT_URI", "urn:camila.github.io:python:server")
     )
 
+    # Criação da estrutura hierárquica de nós
     motor50cv = await server.nodes.objects.add_folder(idx, "Motor50CV")
     electrical = await motor50cv.add_object(idx, "Electrical")
     environment = await motor50cv.add_object(idx, "Environment")
     vibration = await motor50cv.add_object(idx, "Vibration")
 
+    # Definição das variáveis por categoria
     electrical_variables = [
-        "VoltageA", "VoltageB", "VoltageC",
-        "CurrentA", "CurrentB", "CurrentC",
-        "PowerActive", "PowerReactive", "PowerApparent",
-        "EnergyActive", "EnergyReactive", "EnergyApparent",
-        "PowerFactor", "Frequency",
+        "VoltageA", "VoltageB", "VoltageC",          # Tensões por fase
+        "CurrentA", "CurrentB", "CurrentC",          # Correntes por fase
+        "PowerActive", "PowerReactive", "PowerApparent",  # Potências
+        "EnergyActive", "EnergyReactive", "EnergyApparent",  # Energias
+        "PowerFactor", "Frequency",                  # Fator de potência e frequência
     ]
 
     environment_variables = ["Temperature", "Humidity", "CaseTemperature"]
     vibration_variables   = ["Axial", "Radial"]
 
+    # Criação e configuração das variáveis OPC UA
     nodes_variables = {}
     for parent, variables in (
         (electrical, electrical_variables),
@@ -110,38 +295,41 @@ async def discovery():
             await node_val.set_writable()
             nodes_variables[var] = node_val
             
+    # Configuração do gerenciador de nós e integração MQTT
     node_manager = OPCUANodeManager()
     node_manager.set_nodes(nodes_variables)
-
     _ch = await init_mqtt(node_manager)
 
+    # Configuração do sistema de histórico
     variables_for_history = list(nodes_variables.keys())
-
     for nome_variavel in variables_for_history:
         try:
             node = nodes_variables[nome_variavel]
-            await server.iserver.enable_history_data_change(node, period=timedelta(seconds=5),count=10000)
-            server.iserver.history_manager.historize_node_data_change(node)
-            await node.write_attribute(ua.AttributeIds.Historizing,ua.DataValue(ua.Variant(True, ua.VariantType.Boolean)))
+            await server.iserver.enable_history_data_change(
+                node, 
+                period=timedelta(seconds=5),  # Coleta a cada 5 segundos
+                count=10000)                  # Máximo 10.000 registros
+            
+            await node.write_attribute(
+                    ua.AttributeIds.Historizing,
+                    ua.DataValue(ua.Variant(True, ua.VariantType.Boolean))
+                )
             logger.info("History habilitado -> [%s]", nome_variavel)
         except:
             logger.exception("Error -> history")
     
+    # Configuração de eventos personalizados
     try:
+        # Criação do tipo de evento personalizado
         etype = await server.create_custom_event_type(
             idx, "Motor50CVMonitoringEvent", ObjectIds.BaseEventType, [
-                ("CaseTemperature", VariantType.Float),
-                ("VoltagePhase", VariantType.String),
-                ("CurrentPhase", VariantType.String)
+                ("CaseTemperature", VariantType.Float),   # Temperatura do case
+                ("VoltagePhase", VariantType.String),     # Fase com problema de tensão
+                ("CurrentPhase", VariantType.String)      # Fase com problema de corrente
             ],
         )
 
-        event_generator = await server.get_event_generator(etype, motor50cv)
-        try:
-            event_generator.emitting_node = motor50cv
-        except Exception:
-            event_generator.emitting_node = motor50cv.nodeid
-
+        # Configuração do nó como emissor de eventos
         try:
             await motor50cv.write_attribute(
                 ua.AttributeIds.EventNotifier,
@@ -149,26 +337,41 @@ async def discovery():
             )
         except AttributeError:
             await server.set_attribute_value(
-                parent.nodeid,
+                motor50cv.nodeid,
                 ua.AttributeIds.EventNotifier,
                 ua.DataValue(ua.Variant(1, ua.VariantType.Byte))
             )
         
+        # Habilitação do histórico de eventos
         await server.iserver.enable_history_event(
-            server.nodes.server, 
-            period=timedelta(seconds=1),
-            count=10000
+            motor50cv, period=None, count=10000
         )
+
+        # Criação do gerador de eventos
+        event_generator = await server.get_event_generator(etype, motor50cv)
+        try:
+            event_generator.emitting_node = motor50cv
+            logger("Event generator configurado com sucesso")
+        except Exception:
+            event_generator.emitting_node = motor50cv.nodeid
 
     except Exception as e:
         logger.exception("Erro ao configurar eventos: {%s}", e)
         event_generator = None
 
+    # Execução do servidor com tarefas assíncronas
     async with server:
         asyncio.create_task(task_register_discovery(server, registration_interval=10))
-        asyncio.create_task(check_events(event_generator,node_manager))
-        await asyncio.Future()
+        asyncio.create_task(check_events(event_generator, node_manager))
+        await asyncio.Future()  # Mantém o servidor executando indefinidamente
 
 
 if __name__ == "__main__":
+    """
+    Ponto de entrada da aplicação.
+    
+    Executa o servidor OPC UA em modo assíncrono utilizando asyncio.
+    O servidor permanece ativo até ser interrompido manualmente (Ctrl+C)
+    ou por falha crítica do sistema.
+    """
     asyncio.run(discovery())
