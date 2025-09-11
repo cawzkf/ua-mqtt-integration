@@ -1,4 +1,11 @@
 import os, pydoc, pkgutil, importlib, pathlib
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s]: %(message)s"
+)
 
 OUTPUT_DIR = pathlib.Path("docs/api")
 PACKAGES = ["services", "infra", "utils"]  
@@ -11,11 +18,11 @@ for root_pkg in PACKAGES:
     try:
         pkg = importlib.import_module(root_pkg)
     except Exception as e:
-        logger(f"[skip] {root_pkg}: {e}")
+        logger.info(f"[skip] {root_pkg}: {e}")
         continue
 
     # inclui o próprio pacote
-    logger(f"[doc] {root_pkg}")
+    logger.info(f"[doc] {root_pkg}")
     pydoc.writedoc(root_pkg)
 
     # varre submódulos/subpacotes
@@ -27,4 +34,4 @@ for root_pkg in PACKAGES:
             importlib.import_module(name)  
             pydoc.writedoc(name)
         except Exception as e:
-            logger(f"[erro] {name}: {e}")
+            logger.info(f"[erro] {name}: {e}")

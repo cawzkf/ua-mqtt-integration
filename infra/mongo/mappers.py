@@ -1,3 +1,10 @@
+"""
+Módulo de mapeamento entre tipos OPC UA e MongoDB.
+
+Este módulo fornece funções para converter dados OPC UA (DataValues, Events, NodeIds)
+para formato compatível com MongoDB e vice-versa.
+"""
+
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -13,12 +20,39 @@ logging.basicConfig(
 )
 
 def nodeid_to_bson(nid: ua.NodeId) -> dict:
+    """
+    Converte um NodeId OPC UA para formato BSON/MongoDB.
+    
+    Args:
+        nid (ua.NodeId): NodeId do OPC UA
+        
+    Returns:
+        dict: Dicionário com namespace, identificador e tipo
+    """
     return {"ns": nid.NamespaceIndex, "id": nid.Identifier, "t": int(nid.NodeIdType)}
 
 def nodeid_from_bson(d: dict) -> ua.NodeId:
+    """
+    Converte dados BSON/MongoDB de volta para NodeId OPC UA.
+    
+    Args:
+        d (dict): Dicionário com dados do NodeId
+        
+    Returns:
+        ua.NodeId: NodeId reconstruído
+    """
     return ua.NodeId(d["id"], d["ns"], ua.NodeIdType(d["t"]))
 
 def datavalue_to_dict(dv: ua.DataValue) -> dict:
+    """
+    Converte um DataValue OPC UA para dicionário MongoDB.
+    
+    Args:
+        dv (ua.DataValue): DataValue do OPC UA
+        
+    Returns:
+        dict: Dicionário com valor, timestamps e tipo
+    """
     now = datetime.now(timezone.utc)
     src_ts = dv.SourceTimestamp if isinstance(dv.SourceTimestamp, datetime) else now
     srv_ts = dv.ServerTimestamp if isinstance(dv.ServerTimestamp, datetime) else now
@@ -35,6 +69,15 @@ def datavalue_to_dict(dv: ua.DataValue) -> dict:
     }
 
 def datavalue_from_dict(data: dict) -> ua.DataValue:
+    """
+    Converte dicionário MongoDB de volta para DataValue OPC UA.
+    
+    Args:
+        data (dict): Dados do DataValue em formato MongoDB
+        
+    Returns:
+        ua.DataValue: DataValue reconstruído
+    """
     try:
         variant = Variant(
             Value=data.get("value", 0.0),
@@ -62,18 +105,35 @@ def datavalue_from_dict(data: dict) -> ua.DataValue:
         now = datetime.now(timezone.utc)
         return ua.DataValue(Variant(0.0, VariantType.Double), SourceTimestamp=now, ServerTimestamp=now)
 
-
 def _vt_to_int(vt) -> int:
+    """
+    Converte VariantType para inteiro.
+    
+    Args:
+        vt: VariantType OPC UA
+        
+    Returns:
+        int: Valor inteiro do tipo
+    """
     if hasattr(vt, 'value'):
         return int(vt.value)
     return int(vt)
 
-def event_to_dict(event: generate_event_properly) -> dict:
+def event_to_dict(event: Event) -> dict:
+    """
+    Converte um Event OPC UA para dicionário MongoDB.
+    
+    Args:
+        event (Event): Evento OPC UA
+        
+    Returns:
+        dict: Dicionário com todos os campos do evento
+    """
     out = {}
-
+    print(f'entrando: {event}')
     try:
-        v = getattr(event, "EventId", None)
-        val = getattr(v, "Value", None)
+        v = getattr(event, "EventId")
+        val = getattr(v, "Value")
         out["EventId"] = {"VariantType": _vt_to_int(ua.VariantType.ByteString),
                           "Value": val if val is not None else uuid.uuid4().bytes}
     except Exception:
@@ -81,8 +141,8 @@ def event_to_dict(event: generate_event_properly) -> dict:
                           "Value": uuid.uuid4().bytes}
 
     try:
-        v = getattr(event, "EventType", None)
-        nid = getattr(v, "Value", None)
+        v = getattr(event, "EventType")
+        nid = getattr(v, "Value")
         if nid is not None:
             out["EventType"] = {"VariantType": _vt_to_int(ua.VariantType.NodeId),
                                 "Value": nodeid_to_bson(nid)}
@@ -221,6 +281,15 @@ def event_to_dict(event: generate_event_properly) -> dict:
     return out
 
 def event_from_dict(data: dict) -> Event:
+    """
+    Converte dicionário MongoDB de volta para Event OPC UA.
+    
+    Args:
+        data (dict): Dados do evento em formato MongoDB
+        
+    Returns:
+        Event: Evento OPC UA reconstruído
+    """
     ev = Event()
 
     def _vt(v):

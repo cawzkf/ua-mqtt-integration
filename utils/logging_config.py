@@ -7,7 +7,7 @@ def setup_logging(level: str ="INFO")-> logging.Logger:
     Define:
       - `level`: nível de log (ex.: "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET");
         valores inválidos caem em `logging.INFO`.
-      - `format`: `%(asctime)s [%(levelname)s]: %(message)s`
+      - `format`: `%(asctime)s: %(message)s`
       - `stream`: `sys.stdout`
 
     Args:
@@ -22,4 +22,5 @@ def setup_logging(level: str ="INFO")-> logging.Logger:
         format="%(asctime)s [%(levelname)s]: %(message)s",
         stream=sys.stdout,
     )
+    
     return logging.getLogger("logger")

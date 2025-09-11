@@ -1,17 +1,8 @@
 """
 Manipulador de mensagens MQTT para atualização de variáveis OPC UA.
 
-Este módulo define `MQTTMessageHandler`, responsável por:
-- decodificar payloads MQTT (JSON),
-- extrair valores por caminhos de chave (`key_path`),
-- mapear para nomes de variáveis OPC UA via `variable_mapper`,
-- e escrever assíncronamente os valores no `OPCUANodeManager`.
-
-Variáveis de ambiente de controle:
-- MQTT_LOG_PAYLOAD: "1" para logar payloads completos.
-- MQTT_LOG_MAPPING: "1" para logar mapeamentos (key_path -> variável).
-- MQTT_DRY_RUN: "1" para não escrever no OPC UA (somente log).
-- MQTT_LOG_KEYS: lista separada por vírgula de caminhos (ex: "sensor.voltageA,sensor.voltageB") para filtrar logs de mapeamento.
+Este módulo define MQTTMessageHandler, responsável por decodificar payloads MQTT,
+extrair valores por caminhos de chave e mapear para variáveis OPC UA.
 """
 
 import os
@@ -27,20 +18,14 @@ LOG_PAYLOAD   = os.getenv("MQTT_LOG_PAYLOAD", "0") == "1"  # Log detalhado do pa
 LOG_MAPPING   = os.getenv("MQTT_LOG_MAPPING", "1") == "1"  # Log dos mapeamentos aplicados
 DRY_RUN       = os.getenv("MQTT_DRY_RUN", "0") == "1"      # Não escrever no OPC UA, apenas logar
 FOCUS_KEYS    = {k.strip() for k in os.getenv("MQTT_LOG_KEYS", "").split(",") if k.strip()} 
-"""
-Conjunto de caminhos de chaves a logar quando LOG_MAPPING estiver ativo.
-Formato do caminho: "a.b.c" representando o tuple ("a", "b", "c").
-"""
 
 class MQTTMessageHandler:
     """
     Manipula mensagens MQTT e atualiza variáveis OPC UA conforme um mapeamento.
 
-    A classe recebe um `OPCUANodeManager` e um dicionário `variable_mapper`
-    onde a chave é um tuple de strings representando o caminho até o valor no JSON
-    (ex.: `("sensor", "voltageA")`) e o valor é o nome da variável OPC UA
-    (ex.: `"VoltageA"`). Quando uma mensagem chega, o handler extrai os valores
-    conforme os caminhos e agenda a escrita assíncrona no OPC UA.
+    A classe recebe um OPCUANodeManager e um dicionário variable_mapper onde
+    a chave é um tuple representando o caminho até o valor no JSON e o valor
+    é o nome da variável OPC UA.
     """
 
     def __init__(self, node_manager: OPCUANodeManager, variable_mapper: Dict[Tuple[str, ...], str]):
@@ -48,8 +33,8 @@ class MQTTMessageHandler:
         Inicializa o manipulador de mensagens MQTT.
 
         Args:
-            node_manager: Instância de `OPCUANodeManager` usada para escrever valores.
-            variable_mapper: Mapeamento `{ key_path_tuple: "NomeVariavelOPCUA" }`.
+            node_manager (OPCUANodeManager): Instância para escrever valores
+            variable_mapper (Dict): Mapeamento key_path_tuple -> nome_variavel_OPCUA
         """
         self.variable_mapper = variable_mapper
         self.node_manager = node_manager
@@ -58,15 +43,14 @@ class MQTTMessageHandler:
         """
         Callback de recebimento de mensagem MQTT.
 
-        Decodifica o payload em UTF-8, faz o parse de JSON e delega para `_process_message_data`.
-        Em caso de payload inválido, registra aviso.
+        Decodifica o payload UTF-8, faz parse JSON e processa os dados.
 
         Args:
-            _client: Cliente MQTT (não utilizado).
-            topic (str): Tópico da mensagem.
-            payload (bytes): Conteúdo bruto da mensagem.
-            qos (int): QoS da publicação.
-            properties: Propriedades do protocolo (MQTT v5).
+            _client: Cliente MQTT (não utilizado)
+            topic (str): Tópico da mensagem
+            payload (bytes): Conteúdo bruto da mensagem
+            qos (int): QoS da publicação
+            properties: Propriedades do protocolo MQTT v5
         """
         try:
             text = payload.decode("utf-8", errors="replace")
@@ -86,16 +70,13 @@ class MQTTMessageHandler:
 
     def _want_log_key(self, key_path: Tuple[str, ...]) -> bool:
         """
-        Indica se um determinado caminho de chave deve ser logado no modo de mapeamento.
-
-        Se `FOCUS_KEYS` estiver vazio, loga todos. Caso contrário, somente loga
-        quando o caminho (flattened com '.') estiver presente em `FOCUS_KEYS`.
+        Indica se um caminho de chave deve ser logado no modo de mapeamento.
 
         Args:
-            key_path: Tupla representando o caminho no JSON (ex.: ("sensor","voltageA")).
+            key_path (Tuple): Tupla representando o caminho no JSON
 
         Returns:
-            bool: True para logar, False caso contrário.
+            bool: True para logar, False caso contrário
         """
         if not FOCUS_KEYS:
             return True
@@ -106,15 +87,9 @@ class MQTTMessageHandler:
         """
         Processa o dicionário JSON da mensagem e aplica o mapeamento para OPC UA.
 
-        Para cada `key_path` definido em `variable_mapper`:
-          - extrai o valor do `data`,
-          - converte numéricos para `float` quando aplicável,
-          - loga o mapeamento (condicional),
-          - escreve no OPC UA (ou faz DRY_RUN).
-
         Args:
-            data: Dicionário resultante do payload JSON.
-            topic: Tópico MQTT da mensagem (usado para logs).
+            data (Dict): Dicionário resultante do payload JSON
+            topic (str): Tópico MQTT da mensagem
         """
         for key_path, variable_name in self.variable_mapper.items():
             try:
@@ -138,17 +113,14 @@ class MQTTMessageHandler:
     @staticmethod
     def _extract_value_from_data(data: Dict[str, Any], key_path: tuple):
         """
-        Extrai um valor aninhado de `data` seguindo um caminho de chaves.
-
-        Percorre o dicionário conforme as chaves do tuple; se em algum ponto
-        a chave não existir, retorna `None`.
+        Extrai um valor aninhado de data seguindo um caminho de chaves.
 
         Args:
-            data: Dicionário JSON.
-            key_path: Tupla de chaves (ex.: ("sensor","phase","A")).
+            data (Dict): Dicionário JSON
+            key_path (tuple): Tupla de chaves
 
         Returns:
-            Any | None: Valor encontrado ou `None` se o caminho não existir.
+            Any | None: Valor encontrado ou None se o caminho não existir
         """
         curr: Any = data
         for key in key_path:
