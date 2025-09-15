@@ -1,7 +1,6 @@
-
 # Docker commands
 docker-build:	## Construir imagem Docker
-	docker build -t ua-mqtt-bridge .
+	docker build -t ua-mqtt .
 
 docker-run:	## Executar com Docker Compose
 	docker-compose up
@@ -19,6 +18,3 @@ docker-clean:	## Limpar containers e volumes
 	docker-compose down -v
 	docker system prune -f
 
-# Comandos de simulação
-simulate:	## Executar simulador MQTT
-	docker-compose --profile testing up mqtt-simulator

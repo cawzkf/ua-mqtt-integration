@@ -1,56 +1,27 @@
-# Multi-stage build para otimizar tamanho da imagem
-FROM python:3.11-slim as builder
-
-# Instalar dependências do sistema para build
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Criar diretório de trabalho
-WORKDIR /app
-
-# Copiar requirements e instalar dependências
-COPY requirements.txt requirements-dev.txt ./
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Estágio final - imagem de produção
+# Usar imagem slim e garantir pip moderno
 FROM python:3.11-slim
 
-# Instalar dependências de runtime se necessário
-RUN apt-get update && apt-get install -y \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar dependências de sistema mínimas (certificados e compilação básica)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      && rm -rf /var/lib/apt/lists/*
 
-# Criar usuário não-root para segurança
-RUN useradd --create-home --shell /bin/bash --user-group python
-
-# Criar diretório de trabalho
+# Diretório de trabalho
 WORKDIR /app
 
-# Copiar dependências do estágio builder
-COPY --from=builder /root/.local /home/python/.local
+# 1) Copia apenas requirements para aproveitar cache entre builds
+COPY requirements.txt .
 
-# Copiar código da aplicação
-COPY src/ ./src/
-COPY config/ ./config/
-COPY .env.example .env
+# Atualiza pip/setuptools/wheel e instala deps Python
+RUN python -m pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r requirements.txt
 
-# Definir ownership
-RUN chown -R python:python /app
+# 2) Agora copia o restante do projeto
+COPY . .
 
-# Mudar para usuário não-root
-USER python
+# Expor a porta do seu servidor OPC UA
+EXPOSE 4840
 
-# Atualizar PATH para incluir bibliotecas do usuário
-ENV PATH=/home/python/.local/bin:$PATH
-ENV PYTHONPATH=/app
-
-# Expor portas
-EXPOSE 4840 1883
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import socket; socket.create_connection(('localhost', 4840), timeout=5)" || exit 1
-
-# Comando padrão
-CMD ["python", "src/main.py"]
+# 3) Rodar a app
+CMD ["python", "server.py"]

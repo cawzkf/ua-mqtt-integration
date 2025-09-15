@@ -25,13 +25,17 @@ for root_pkg in PACKAGES:
     logger.info(f"[doc] {root_pkg}")
     pydoc.writedoc(root_pkg)
 
-    # varre submódulos/subpacotes
-    for mod in pkgutil.walk_packages(pkg.__path__, prefix=root_pkg + "."):
-        name = mod.name
+    modulo = [
+        "infra",
+        "services",
+        "utils"
+    ]
+
+    # varre 
+    for mod in modulo:
         try:
-            logger(f"[doc] {name}")
-            # garante import
-            importlib.import_module(name)  
-            pydoc.writedoc(name)
+            importlib.import_module(modulo)
+            logger.info(f"[doc] {modulo}")
+            pydoc.writedoc(modulo)
         except Exception as e:
-            logger.info(f"[erro] {name}: {e}")
+            logger.info(f"[erro] {modulo}: {e}")

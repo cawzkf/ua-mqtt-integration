@@ -60,37 +60,37 @@ async def check_voltage_events(nodes_variables: OPCUANodeManager, event_generato
             # Verifica se a variável existe antes de tentar ler
             if variavel_tensao not in nodes_variables:
                 continue
-                
+
             # Leitura da tensão atual da fase
             tensao = await _read_float(nodes_variables, variavel_tensao)
-            
+
             # Cálculo dos limites de operação
             limite_superior = NOMINAL_VOLTAGE * (1 + TOLERANCE)
             limite_inferior = NOMINAL_VOLTAGE * (1 - TOLERANCE)
-            
+
             # Detecção de condição de sobretensão
             if tensao > limite_superior:
                 await generate_event_properly(
                     event_generator,
                     event_type="Overvoltage",
-                    message=f"Overvoltage detected",
-                    severity=700,  # Severidade alta (requer ação)
-                    VoltagePhase=fase
+                    message=f"Overvoltage detected: Voltage{fase}",
+                    severity=700,  # Severidade alta
+                    VoltagePhase=(f'{tensao}')
                 )
 
             # Detecção de condição de subtensão
-            elif tensao < limite_inferior:   
+            elif tensao < limite_inferior:
                 await generate_event_properly(
                     event_generator,
-                    event_type="Undervoltage", 
-                    message=f"Undervoltage detected",
-                    severity=700,  # Severidade alta 
-                    VoltagePhase=fase
+                    event_type="Undervoltage",
+                    message=f"Undervoltage detected: Voltage{fase}",
+                    severity=700,  # Severidade alta
+                    VoltagePhase=(f'{tensao}')
                 )
             else:
                 # Tensão dentro da faixa normal
                 logger.info("Tensão fase {%s} normal", fase)
-                
+
         except Exception as e:
             logger.info("Erro ao verificar tensão fase {%s}: {%s}", fase, e)
             # Erro é registrado mas não interrompe verificação das outras fases
