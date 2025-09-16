@@ -138,7 +138,7 @@ async def check_events(event_generator, nodes_variables):
                 await check_current_events(nodes_variables, event_generator)
         except Exception:
             logger.exception("Falha ao checar eventos")
-        await asyncio.sleep(5) 
+        await asyncio.sleep(15) 
     
 async def init_mqtt(node_manager: OPCUANodeManager) -> MQTTChannel:
     """

@@ -1,4 +1,4 @@
-import os, pydoc, pkgutil, importlib, pathlib
+import os, pydoc, importlib, pathlib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -7,8 +7,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s]: %(message)s"
 )
 
-OUTPUT_DIR = pathlib.Path("docs/api")
-PACKAGES = ["services", "infra", "utils"]  
+OUTPUT_DIR = pathlib.Path("docs")
+PACKAGES = ["aas_api", "services", "infra", "utils"]  
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # pydoc.writedoc grava no diretório atual
@@ -27,6 +27,7 @@ for root_pkg in PACKAGES:
 
     modulo = [
         "infra",
+        "aas_api",
         "services",
         "utils"
     ]

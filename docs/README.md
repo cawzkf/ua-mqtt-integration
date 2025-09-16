@@ -89,7 +89,7 @@ CRITICAL_TEMPERATURE = 60.0  # Temperatura crítica (°C)
 ### Dependências
 
 ```bash
-pip install asyncua pymongo python-dotenv gmqtt
+pip install asyncua pymongo python-dotenv gmqtt motor
 ```
 
 ### Execução

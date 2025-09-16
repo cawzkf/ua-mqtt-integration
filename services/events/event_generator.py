@@ -7,7 +7,7 @@ import uuid
 import traceback
 import logging
 import os
-import pymongo
+from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone
 from asyncua import ua
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ async def generate_event_properly(event_generator, event_type, message, severity
         logger.info("Salvando evento diretamente no MongoDB...")
         try:
             mongo_uri = os.getenv("MONGO_URI")
-            mongo_client = pymongo.AsyncMongoClient(mongo_uri)
+            mongo_client = AsyncIOMotorClient(mongo_uri)
             database_name = os.getenv("MONGO_DBNAME", "motor50cv")
             db = mongo_client[database_name]
             # Verificar campos personalizados ANTES de salvar no MongoDB
@@ -139,7 +139,7 @@ async def generate_event_properly(event_generator, event_type, message, severity
                         logger.warning("Erro ao exibir campo %s: %s", field, e)
             else:
                 logger.warning("Nenhum campo personalizado encontrado")
-            await mongo_client.close()
+
         except Exception as e:
             logger.exception("Erro ao salvar diretamente no MongoDB: %s", e)
 

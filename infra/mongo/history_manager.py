@@ -6,13 +6,13 @@ armazenar dados históricos e eventos de um servidor OPC UA em MongoDB.
 """
 
 import os
+import asyncua.ua as ua
 import logging
+import pymongo
 from typing import List, Tuple, Union
 from datetime import timedelta, datetime, timezone
-from infra.mongo.mappers import event_to_dict
 from asyncua.common.events import Event
-import pymongo
-import asyncua.ua as ua
+from motor.motor_asyncio import AsyncIOMotorClient
 from asyncua.server import Server
 from asyncua.server.history import HistoryStorageInterface
 from asyncua.ua import NodeId, DataValue
@@ -20,7 +20,6 @@ from asyncua.ua import NodeId, DataValue
 from infra.mongo.mappers import (
     datavalue_to_dict,
     datavalue_from_dict,
-    event_to_dict,
     event_from_dict,
 )
 from utils.sanitize import sanitize_collection  
@@ -44,7 +43,7 @@ class HistoryMongoDB(HistoryStorageInterface):
             max_history_data_response_size (int): Tamanho máximo de resposta. Padrão: 10000
         """
         mongo_uri = os.getenv("MONGO_URI")
-        self.connection = pymongo.AsyncMongoClient(mongo_uri)
+        self.connection = AsyncIOMotorClient(mongo_uri)
         self.database_name = os.getenv("MONGO_DBNAME", "motor50cv")
         self.server = server
         super().__init__(max_history_data_response_size)
