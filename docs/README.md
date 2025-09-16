@@ -47,7 +47,7 @@ Crie um arquivo `.env` com as seguintes configurações:
 ```env
 # MongoDB
 MONGO_URI=mongodb://localhost:27017
-MONGO_DBNAME=motor50cv_teste
+MONGO_DBNAME=motor50cv
 
 # OPC UA Server
 OPCUA_SERVER_PRODUCT_URI=urn:x.github.io:python:server
@@ -89,7 +89,7 @@ CRITICAL_TEMPERATURE = 60.0  # Temperatura crítica (°C)
 ### Dependências
 
 ```bash
-pip install asyncua pymongo python-dotenv gmqtt
+pip install asyncua pymongo python-dotenv gmqtt motor
 ```
 
 ### Execução
@@ -183,12 +183,8 @@ O sistema gera logs detalhados para:
 
 Gere documentação das APIs:
 ```bash
-python -m pydoc -w nome_do_modulo
+python -m pydoc -w gen_pydoc_all
 ```
-
-### Testes
-
-Para testes, configure `MQTT_DRY_RUN=1` para simular operações sem escrever no OPC UA.
 
 ## Requisitos do Sistema
 

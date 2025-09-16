@@ -1,4 +1,4 @@
-import os, pydoc, pkgutil, importlib, pathlib
+import os, pydoc, importlib, pathlib
 import logging
 
 logger = logging.getLogger(__name__)
@@ -7,8 +7,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s]: %(message)s"
 )
 
-OUTPUT_DIR = pathlib.Path("docs/api")
-PACKAGES = ["services", "infra", "utils"]  
+OUTPUT_DIR = pathlib.Path("docs")
+PACKAGES = ["aas_api", "services", "infra", "utils"]  
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # pydoc.writedoc grava no diretório atual
@@ -25,13 +25,18 @@ for root_pkg in PACKAGES:
     logger.info(f"[doc] {root_pkg}")
     pydoc.writedoc(root_pkg)
 
-    # varre submódulos/subpacotes
-    for mod in pkgutil.walk_packages(pkg.__path__, prefix=root_pkg + "."):
-        name = mod.name
+    modulo = [
+        "infra",
+        "aas_api",
+        "services",
+        "utils"
+    ]
+
+    # varre 
+    for mod in modulo:
         try:
-            logger(f"[doc] {name}")
-            # garante import
-            importlib.import_module(name)  
-            pydoc.writedoc(name)
+            importlib.import_module(modulo)
+            logger.info(f"[doc] {modulo}")
+            pydoc.writedoc(modulo)
         except Exception as e:
-            logger.info(f"[erro] {name}: {e}")
+            logger.info(f"[erro] {modulo}: {e}")
